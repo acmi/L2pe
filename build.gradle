@@ -1,0 +1,33 @@
+group 'acmi.l2.clientmod'
+version '2.0-RC'
+
+apply plugin: 'java'
+
+repositories {
+    mavenCentral()
+    maven { url "https://raw.githubusercontent.com/acmi/L2io/mvn-repo" }
+    maven { url "https://raw.githubusercontent.com/acmi/Serializer/mvn-repo" }
+    maven { url "https://raw.githubusercontent.com/acmi/L2crypt/mvn-repo" }
+    maven { url "https://raw.githubusercontent.com/acmi/L2unreal/mvn-repo" }
+    maven { url "https://raw.githubusercontent.com/acmi/pec/mvn-repo" }
+    maven { url "https://raw.githubusercontent.com/acmi/AutoCompleteComboBox/mvn-repo" }
+}
+
+dependencies {
+    compile group: 'acmi.l2.clientmod', name: 'pec', version: '1.0'
+}
+
+jar {
+    archiveName = "${rootProject.name}.jar"
+
+    configurations.compile.collect {
+        from(zipTree(it)) {
+            exclude 'META-INF/**'
+        }
+    }
+
+    manifest {
+        attributes('Main-Class': 'acmi.l2.clientmod.l2pe.L2PE')
+        attributes('Version': version)
+    }
+}
