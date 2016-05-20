@@ -55,7 +55,10 @@ import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URL;
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.ResourceBundle;
 import java.util.stream.Collectors;
 
 import static acmi.l2.clientmod.unreal.UnrealSerializerFactory.IS_STRUCT;
@@ -185,6 +188,9 @@ public class Controller implements Initializable {
             packageSelector.getItems().addAll(packages.get(getSelectedItem(folderSelector)));
         });
         packageSelector.getSelectionModel().selectedIndexProperty().addListener((observable) -> {
+            entrySelector.getSelectionModel().clearSelection();
+            entrySelector.getItems().clear();
+
             unrealPackage.setValue(null);
 
             File newValue = getSelectedItem(packageSelector);
