@@ -27,6 +27,7 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
@@ -64,11 +65,11 @@ public class L2PE extends Application {
         try (JarFile jarFile = new JarFile(Paths.get(getClass().getProtectionDomain().getCodeSource().getLocation().toURI()).toFile())) {
             Manifest manifest = jarFile.getManifest();
             return manifest.getMainAttributes().getValue("Version");
+        } catch (FileNotFoundException ignore) {
         } catch (IOException | URISyntaxException e) {
             log.log(Level.WARNING, "version info load error", e);
-
-            return "";
         }
+        return "";
     }
 
     public static Preferences getPrefs() {
