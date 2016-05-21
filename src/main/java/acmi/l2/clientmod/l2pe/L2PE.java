@@ -42,7 +42,11 @@ import java.util.prefs.Preferences;
 public class L2PE extends Application {
     private static final Logger log = Logger.getLogger(L2PE.class.getName());
 
-    Stage stage;
+    private Stage stage;
+
+    Stage getStage(){
+        return stage;
+    }
 
     @Override
     public void start(Stage stage) throws Exception {

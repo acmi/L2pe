@@ -90,11 +90,11 @@ public class Controller implements Initializable {
     private ProgressIndicator loading;
 
     private L2PE application;
-    private ObjectProperty<File> initialDirectory = new SimpleObjectProperty<>();
-    private ObjectProperty<Environment> environment = new SimpleObjectProperty<>();
-    private ObjectProperty<UnrealSerializerFactory> serializerFactory = new SimpleObjectProperty<>();
-    private MapProperty<File, List<File>> packages = new SimpleMapProperty<>();
-    private ObjectProperty<UnrealPackage> unrealPackage = new SimpleObjectProperty<>();
+    private ObjectProperty<File> initialDirectory = new SimpleObjectProperty<>(this, "initialDirectory");
+    private ObjectProperty<Environment> environment = new SimpleObjectProperty<>(this, "environment");
+    private ObjectProperty<UnrealSerializerFactory> serializerFactory = new SimpleObjectProperty<>(this, "serializerFactory");
+    private MapProperty<File, List<File>> packages = new SimpleMapProperty<>(this, "packages");
+    private ObjectProperty<UnrealPackage> unrealPackage = new SimpleObjectProperty<>(this, "unrealPackage");
 
     public void setApplication(L2PE application) {
         this.application = application;
@@ -267,7 +267,7 @@ public class Controller implements Initializable {
                 getInitialDirectory().isDirectory())
             fileChooser.setInitialDirectory(getInitialDirectory());
 
-        File selected = fileChooser.showOpenDialog(application.stage);
+        File selected = fileChooser.showOpenDialog(application.getStage());
         if (selected == null)
             return;
 
