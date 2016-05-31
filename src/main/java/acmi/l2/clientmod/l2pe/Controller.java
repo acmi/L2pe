@@ -21,10 +21,7 @@
  */
 package acmi.l2.clientmod.l2pe;
 
-import acmi.l2.clientmod.io.ByteUtil;
-import acmi.l2.clientmod.io.ObjectOutput;
-import acmi.l2.clientmod.io.ObjectOutputStream;
-import acmi.l2.clientmod.io.UnrealPackage;
+import acmi.l2.clientmod.io.*;
 import acmi.l2.clientmod.properties.control.PropertiesEditor;
 import acmi.l2.clientmod.unreal.Environment;
 import acmi.l2.clientmod.unreal.UnrealRuntimeContext;
@@ -61,6 +58,7 @@ import java.util.Objects;
 import java.util.ResourceBundle;
 import java.util.stream.Collectors;
 
+import static acmi.l2.clientmod.io.UnrealPackage.ObjectFlag.HasStack;
 import static acmi.l2.clientmod.unreal.UnrealSerializerFactory.IS_STRUCT;
 
 public class Controller implements Initializable {
@@ -365,11 +363,13 @@ public class Controller implements Initializable {
         name.setPromptText("Package.Name");
         TextField clazz = new TextField();
         clazz.setPromptText("Core.Class");
+        CheckBox hasStack = new CheckBox("HasStack");
 
         grid.add(new Label("Name:"), 0, 0);
         grid.add(name, 1, 0);
         grid.add(new Label("Class:"), 0, 1);
         grid.add(clazz, 1, 1);
+        grid.add(hasStack, 0, 2);
 
         ButtonType objType = new ButtonType("Object", ButtonBar.ButtonData.OK_DONE);
         ButtonType classType = new ButtonType("Class", ButtonBar.ButtonData.OK_DONE);
@@ -389,14 +389,34 @@ public class Controller implements Initializable {
                                 String objName = nameClass[1];
                                 String objClass = null;
                                 String objSuperClass = null;
-                                byte[] data = ByteUtil.compactIntToByteArray(unrealPackage.get().nameReference("None"));
+                                byte[] data;
+                                int flags = UnrealPackage.DEFAULT_OBJECT_FLAGS;
                                 switch (nameClass[0]) {
-                                    case "Object":
-                                        objClass = nameClass[2];
-                                        break;
                                     case "Class":
                                         objSuperClass = nameClass[2];
-                                        //TODO data =
+                                        data = null; //TODO
+                                        break;
+                                    case "Object":
+                                    default:
+                                        objClass = nameClass[2];
+                                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                        DataOutput dataOutput = new DataOutputStream(baos, null);
+                                        if (hasStack.isSelected()) {
+                                            flags |= HasStack.getMask();
+
+                                            int classRef = up.objectReferenceByName(objClass, IS_STRUCT);
+                                            if (classRef == 0) {
+                                                up.addImportEntries(Collections.singletonMap(objClass, "Core.Class"));
+                                                classRef = up.objectReferenceByName(objClass, IS_STRUCT);
+                                            }
+                                            dataOutput.writeCompactInt(classRef);
+                                            dataOutput.writeCompactInt(classRef);
+                                            dataOutput.writeLong(-1);
+                                            dataOutput.writeInt(0);
+                                            dataOutput.writeCompactInt(-1);
+                                        }
+                                        dataOutput.writeCompactInt(up.nameReference("None"));
+                                        data = baos.toByteArray();
                                         break;
                                 }
                                 up.addExportEntry(
@@ -404,7 +424,7 @@ public class Controller implements Initializable {
                                         objClass,
                                         objSuperClass,
                                         data,
-                                        UnrealPackage.DEFAULT_OBJECT_FLAGS);
+                                        flags);
                                 unrealPackage.set(up);
                             } catch (Exception e) {
                                 showException("Couldn't add export entry", e);
