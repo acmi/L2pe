@@ -44,7 +44,7 @@ public class L2PE extends Application {
 
     private Stage stage;
 
-    Stage getStage(){
+    Stage getStage() {
         return stage;
     }
 

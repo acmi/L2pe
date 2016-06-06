@@ -1,5 +1,5 @@
 group 'acmi.l2.clientmod'
-version '2.0'
+version '2.1'
 
 apply plugin: 'java'
 
@@ -14,7 +14,7 @@ repositories {
 }
 
 dependencies {
-    compile group: 'acmi.l2.clientmod', name: 'pec', version: '1.0'
+    compile group: 'acmi.l2.clientmod', name: 'pec', version: '1.2'
 }
 
 jar {

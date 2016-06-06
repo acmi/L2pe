@@ -52,16 +52,24 @@ import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URL;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.ResourceBundle;
+import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static acmi.l2.clientmod.io.UnrealPackage.ObjectFlag.HasStack;
+import static acmi.l2.clientmod.io.UnrealPackage.ObjectFlag.Standalone;
 import static acmi.l2.clientmod.unreal.UnrealSerializerFactory.IS_STRUCT;
 
 public class Controller implements Initializable {
+    private static final Logger log = Logger.getLogger(Controller.class.getName());
+
+    private static final boolean SAVE_DEFAULTS = System.getProperty("L2pe.saveDefaults", "false").equalsIgnoreCase("true");
+    private static final boolean SHOW_STACKTRACE = System.getProperty("L2pe.showStackTrace", "false").equalsIgnoreCase("true");
+
     @FXML
     private Separator folderSeparator;
     @FXML
@@ -93,6 +101,10 @@ public class Controller implements Initializable {
     private ObjectProperty<UnrealSerializerFactory> serializerFactory = new SimpleObjectProperty<>(this, "serializerFactory");
     private MapProperty<File, List<File>> packages = new SimpleMapProperty<>(this, "packages");
     private ObjectProperty<UnrealPackage> unrealPackage = new SimpleObjectProperty<>(this, "unrealPackage");
+
+    private ExecutorService executor = Executors.newSingleThreadExecutor(r -> new Thread(r, "L2pe Executor") {{
+        setDaemon(true);
+    }});
 
     public void setApplication(L2PE application) {
         this.application = application;
@@ -174,7 +186,6 @@ public class Controller implements Initializable {
         BooleanBinding folderSelected = Bindings.createBooleanBinding(() -> Objects.nonNull(getSelectedItem(folderSelector)), folderSelector.getSelectionModel().selectedIndexProperty());
         packageSeparator.visibleProperty().bind(folderSelected);
         packageSelector.visibleProperty().bind(folderSelected);
-        AutoCompleteComboBox.autoCompleteComboBox(packageSelector, AutoCompleteComboBox.AutoCompleteMode.CONTAINING);
         packageSelector.setConverter(name);
         folderSelector.getSelectionModel().selectedIndexProperty().addListener((observable) -> {
             packageSelector.getSelectionModel().clearSelection();
@@ -184,6 +195,8 @@ public class Controller implements Initializable {
                 return;
 
             packageSelector.getItems().addAll(packages.get(getSelectedItem(folderSelector)));
+
+            AutoCompleteComboBox.autoCompleteComboBox(packageSelector, AutoCompleteComboBox.AutoCompleteMode.CONTAINING);
         });
         packageSelector.getSelectionModel().selectedIndexProperty().addListener((observable) -> {
             entrySelector.getSelectionModel().clearSelection();
@@ -199,6 +212,8 @@ public class Controller implements Initializable {
             try (UnrealPackage up = new UnrealPackage(newValue, true)) {
                 unrealPackage.setValue(up);
             } catch (Exception e) {
+                log.log(Level.SEVERE, e, () -> "Couldn't load: " + newValue);
+
                 showException("Couldn't load: " + newValue, e);
             }
         });
@@ -209,7 +224,6 @@ public class Controller implements Initializable {
         addImport.visibleProperty().bind(packageSelected);
         addExport.visibleProperty().bind(packageSelected);
         entrySelector.visibleProperty().bind(packageSelected);
-        AutoCompleteComboBox.autoCompleteComboBox(entrySelector, AutoCompleteComboBox.AutoCompleteMode.CONTAINING);
         unrealPackage.addListener((observable, oldValue, newValue) -> {
             entrySelector.getSelectionModel().clearSelection();
             entrySelector.getItems().clear();
@@ -222,6 +236,8 @@ public class Controller implements Initializable {
                     .sorted((e1, e2) -> e1.getObjectFullName().compareToIgnoreCase(e2.getObjectFullName()))
                     .collect(Collectors.toList())
             );
+
+            AutoCompleteComboBox.autoCompleteComboBox(entrySelector, AutoCompleteComboBox.AutoCompleteMode.CONTAINING);
         });
         entrySelector.getSelectionModel().selectedIndexProperty().addListener((observable) -> {
             properties.setStructName(null);
@@ -232,19 +248,22 @@ public class Controller implements Initializable {
             if (newValue == null)
                 return;
 
-            new Thread(() -> {
+            executor.execute(() -> {
                 Platform.runLater(() -> loading.setVisible(true));
+
                 try {
                     Object obj = getSerializerFactory().getOrCreateObject(newValue);
 
-                    properties.setStructName(obj.getClassFullName());
+                    properties.setStructName(newValue.getObjectClass() == null ? newValue.getObjectSuperClass().getObjectFullName() : obj.getClassFullName());
                     properties.setPropertyList(FXCollections.observableList(obj.properties));
                 } catch (Exception e) {
+                    log.log(Level.SEVERE, e, () -> "Couldn't load entry");
+
                     showException("Couldn't load entry", e);
                 } finally {
                     Platform.runLater(() -> loading.setVisible(false));
                 }
-            }).start();
+            });
         });
 
         BooleanBinding entrySelected = Bindings.createBooleanBinding(() -> Objects.nonNull(getSelectedItem(entrySelector)), entrySelector.getSelectionModel().selectedIndexProperty());
@@ -274,20 +293,25 @@ public class Controller implements Initializable {
         try {
             setEnvironment(Environment.fromIni(selected));
         } catch (Exception e) {
+            log.log(Level.SEVERE, e, () -> "Couldn't load L2.ini");
+
             showException("Couldn't load L2.ini", e);
             return;
         }
 
-        new Thread(() -> {
+        executor.execute(() -> {
             Platform.runLater(() -> loading.setVisible(true));
+
             try {
                 getSerializerFactory().getOrCreateObject("Engine.Actor", IS_STRUCT);
             } catch (Exception e) {
+                log.log(Level.SEVERE, e, () -> "Couldn't load Engine.Actor");
+
                 showException("Couldn't load Engine.Actor", e);
             } finally {
                 Platform.runLater(() -> loading.setVisible(false));
             }
-        }).start();
+        });
     }
 
     public void addName() {
@@ -296,15 +320,23 @@ public class Controller implements Initializable {
         dialog.setHeaderText(null);
         dialog.setContentText("Name string:");
         dialog.showAndWait()
-                .ifPresent(name -> {
+                .ifPresent(name -> executor.execute(() -> {
+                            Platform.runLater(() -> loading.setVisible(true));
+
                             try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
                                 up.addNameEntries(name);
-                                unrealPackage.set(up);
+                                Platform.runLater(() -> unrealPackage.set(up));
+
+                                getEnvironment().markInvalid(up.getPackageName());
                             } catch (Exception e) {
+                                log.log(Level.SEVERE, e, () -> "Couldn't add name entry");
+
                                 showException("Couldn't add name entry", e);
+                            } finally {
+                                Platform.runLater(() -> loading.setVisible(false));
                             }
                         }
-                );
+                ));
     }
 
     public void addImport() {
@@ -338,15 +370,22 @@ public class Controller implements Initializable {
         });
 
         dialog.showAndWait()
-                .ifPresent(nameClass -> {
-                            try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
-                                up.addImportEntries(Collections.singletonMap(nameClass.getKey(), nameClass.getValue()));
-                                unrealPackage.set(up);
-                            } catch (Exception e) {
-                                showException("Couldn't add import entry", e);
-                            }
-                        }
-                );
+                .ifPresent(nameClass -> executor.execute(() -> {
+                    Platform.runLater(() -> loading.setVisible(true));
+
+                    try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
+                        up.addImportEntries(Collections.singletonMap(nameClass.getKey(), nameClass.getValue()));
+                        Platform.runLater(() -> unrealPackage.set(up));
+
+                        getEnvironment().markInvalid(up.getPackageName());
+                    } catch (Exception e) {
+                        log.log(Level.SEVERE, e, () -> "Couldn't add import entry");
+
+                        showException("Couldn't add import entry", e);
+                    } finally {
+                        Platform.runLater(() -> loading.setVisible(false));
+                    }
+                }));
     }
 
     public void addExport() {
@@ -374,7 +413,7 @@ public class Controller implements Initializable {
         ButtonType objType = new ButtonType("Object", ButtonBar.ButtonData.OK_DONE);
         ButtonType classType = new ButtonType("Class", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().setContent(grid);
-        dialog.getDialogPane().getButtonTypes().addAll(objType/*, classType*/, ButtonType.CANCEL);
+        dialog.getDialogPane().getButtonTypes().addAll(objType, classType, ButtonType.CANCEL);
 
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton.getButtonData() == ButtonBar.ButtonData.OK_DONE) {
@@ -384,53 +423,106 @@ public class Controller implements Initializable {
         });
 
         dialog.showAndWait()
-                .ifPresent(nameClass -> {
-                            try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
-                                String objName = nameClass[1];
-                                String objClass = null;
-                                String objSuperClass = null;
-                                byte[] data;
-                                int flags = UnrealPackage.DEFAULT_OBJECT_FLAGS;
-                                switch (nameClass[0]) {
-                                    case "Class":
-                                        objSuperClass = nameClass[2];
-                                        data = null; //TODO
-                                        break;
-                                    case "Object":
-                                    default:
-                                        objClass = nameClass[2];
-                                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                        DataOutput dataOutput = new DataOutputStream(baos, null);
-                                        if (hasStack.isSelected()) {
-                                            flags |= HasStack.getMask();
+                .ifPresent(nameClass -> executor.execute(() -> {
+                    Platform.runLater(() -> loading.setVisible(true));
 
-                                            int classRef = up.objectReferenceByName(objClass, IS_STRUCT);
-                                            if (classRef == 0) {
-                                                up.addImportEntries(Collections.singletonMap(objClass, "Core.Class"));
-                                                classRef = up.objectReferenceByName(objClass, IS_STRUCT);
-                                            }
-                                            dataOutput.writeCompactInt(classRef);
-                                            dataOutput.writeCompactInt(classRef);
-                                            dataOutput.writeLong(-1);
-                                            dataOutput.writeInt(0);
-                                            dataOutput.writeCompactInt(-1);
-                                        }
-                                        dataOutput.writeCompactInt(up.nameReference("None"));
-                                        data = baos.toByteArray();
-                                        break;
+                    try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
+                        String objName = nameClass[1];
+                        int flags = UnrealPackage.DEFAULT_OBJECT_FLAGS;
+                        switch (nameClass[0]) {
+                            case "Class": {
+                                flags |= Standalone.getMask();
+                                String objSuperClass = nameClass[2];
+
+                                Stream.of(up.getPackageName(), "System")
+                                        .filter(s -> up.nameReference(s) < 0)
+                                        .forEach(up::addNameEntries);
+                                if (up.objectReferenceByName("Core.Object", IS_STRUCT) == 0)
+                                    up.addImportEntries(Collections.singletonMap("Core.Object", "Core.Class"));
+                                up.addExportEntry(
+                                        objName,
+                                        null,
+                                        objSuperClass,
+                                        new byte[0],
+                                        flags);
+                                UnrealPackage.ExportEntry entry = up.getExportTable().get(up.getExportTable().size() - 1);
+
+                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                DataOutput dataOutput = new DataOutputStream(baos, null);
+                                dataOutput.writeCompactInt(up.objectReferenceByName(objSuperClass, IS_STRUCT));
+                                dataOutput.writeCompactInt(0);
+                                dataOutput.writeCompactInt(0);
+                                dataOutput.writeCompactInt(0);
+                                dataOutput.writeCompactInt(up.nameReference(entry.getObjectName().getName()));
+                                dataOutput.writeCompactInt(0);
+                                dataOutput.writeInt(-1);
+                                dataOutput.writeInt(-1);
+                                dataOutput.writeInt(0);
+                                dataOutput.writeLong(0x0080000000000040L);
+                                dataOutput.writeLong(-1L);
+                                dataOutput.writeShort(-1);
+                                dataOutput.writeInt(0);
+                                dataOutput.writeInt(0x00000212);
+                                dataOutput.writeBytes(new byte[16]);
+                                dataOutput.writeCompactInt(2);
+                                dataOutput.writeCompactInt(entry.getObjectReference());
+                                dataOutput.writeInt(1);
+                                dataOutput.writeInt(0);
+                                dataOutput.writeCompactInt(entry.getObjectSuperClass().getObjectReference());
+                                dataOutput.writeInt(1);
+                                dataOutput.writeInt(0);
+                                Set<String> packages = new HashSet<>(Arrays.asList("Core", "Engine", up.getPackageName()));
+                                dataOutput.writeCompactInt(packages.size());
+                                for (String packageName : packages)
+                                    dataOutput.writeCompactInt(up.nameReference(packageName));
+                                dataOutput.writeCompactInt(up.objectReferenceByName("Core.Object", IS_STRUCT));
+                                dataOutput.writeCompactInt(up.nameReference("System"));
+                                dataOutput.writeCompactInt(0);
+                                dataOutput.writeCompactInt(up.nameReference("None"));
+
+                                entry.setObjectRawData(baos.toByteArray());
+                                break;
+                            }
+                            case "Object":
+                            default: {
+                                String objClass = nameClass[2];
+                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                DataOutput dataOutput = new DataOutputStream(baos, null);
+                                if (hasStack.isSelected()) {
+                                    flags |= HasStack.getMask();
+
+                                    int classRef = up.objectReferenceByName(objClass, IS_STRUCT);
+                                    if (classRef == 0) {
+                                        up.addImportEntries(Collections.singletonMap(objClass, "Core.Class"));
+                                        classRef = up.objectReferenceByName(objClass, IS_STRUCT);
+                                    }
+                                    dataOutput.writeCompactInt(classRef);
+                                    dataOutput.writeCompactInt(classRef);
+                                    dataOutput.writeLong(-1);
+                                    dataOutput.writeInt(0);
+                                    dataOutput.writeCompactInt(-1);
                                 }
+                                dataOutput.writeCompactInt(up.nameReference("None"));
                                 up.addExportEntry(
                                         objName,
                                         objClass,
-                                        objSuperClass,
-                                        data,
+                                        null,
+                                        baos.toByteArray(),
                                         flags);
-                                unrealPackage.set(up);
-                            } catch (Exception e) {
-                                showException("Couldn't add export entry", e);
+                                break;
                             }
                         }
-                );
+                        Platform.runLater(() -> unrealPackage.set(up));
+
+                        getEnvironment().markInvalid(up.getPackageName());
+                    } catch (Exception e) {
+                        log.log(Level.SEVERE, e, () -> "Couldn't add export entry");
+
+                        showException("Couldn't add export entry", e);
+                    } finally {
+                        Platform.runLater(() -> loading.setVisible(false));
+                    }
+                }));
     }
 
     public void save() {
@@ -439,12 +531,14 @@ public class Controller implements Initializable {
         if (selected == null)
             return;
 
-        new Thread(() -> {
+        executor.execute(() -> {
             Platform.runLater(() -> loading.setVisible(true));
+
             try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
                 UnrealPackage.ExportEntry entry = up.getExportTable().get(selected.getIndex());
                 Object object = getSerializerFactory().getOrCreateObject(entry);
-                PropertiesEditor.removeDefaults(object.properties, getSerializerFactory(), selected.getUnrealPackage());
+                if (!SAVE_DEFAULTS)
+                    PropertiesEditor.removeDefaults(object.properties, entry.getObjectClass() == null ? entry.getObjectSuperClass().getObjectFullName() : entry.getFullClassName(), getSerializerFactory(), selected.getUnrealPackage());
                 UnrealRuntimeContext context = new UnrealRuntimeContext(entry, getSerializerFactory());
                 {
                     ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -467,49 +561,69 @@ public class Controller implements Initializable {
                 unrealPackage.set(up);
                 entrySelector.getSelectionModel().select(entry);
             } catch (Exception e) {
+                log.log(Level.SEVERE, e, () -> "Couldn't save entry");
+
                 showException("Couldn't save entry", e);
             } finally {
                 Platform.runLater(() -> loading.setVisible(false));
             }
-        }).start();
+        });
     }
 
     private void showException(String text, Throwable ex) {
         Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.ERROR);
-            alert.setTitle("Error");
-            alert.setHeaderText(null);
-            alert.setContentText(text);
+            if (SHOW_STACKTRACE) {
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setTitle("Error");
+                alert.setHeaderText(null);
+                alert.setContentText(text);
 
-            StringWriter sw = new StringWriter();
-            PrintWriter pw = new PrintWriter(sw);
-            ex.printStackTrace(pw);
-            String exceptionText = sw.toString();
+                StringWriter sw = new StringWriter();
+                PrintWriter pw = new PrintWriter(sw);
+                ex.printStackTrace(pw);
+                String exceptionText = sw.toString();
 
-            Label label = new Label("Exception stacktrace:");
+                Label label = new Label("Exception stacktrace:");
 
-            TextArea textArea = new TextArea(exceptionText);
-            textArea.setEditable(false);
-            textArea.setWrapText(true);
+                TextArea textArea = new TextArea(exceptionText);
+                textArea.setEditable(false);
+                textArea.setWrapText(true);
 
-            textArea.setMaxWidth(Double.MAX_VALUE);
-            textArea.setMaxHeight(Double.MAX_VALUE);
-            GridPane.setVgrow(textArea, Priority.ALWAYS);
-            GridPane.setHgrow(textArea, Priority.ALWAYS);
+                textArea.setMaxWidth(Double.MAX_VALUE);
+                textArea.setMaxHeight(Double.MAX_VALUE);
+                GridPane.setVgrow(textArea, Priority.ALWAYS);
+                GridPane.setHgrow(textArea, Priority.ALWAYS);
 
-            GridPane expContent = new GridPane();
-            expContent.setMaxWidth(Double.MAX_VALUE);
-            expContent.add(label, 0, 0);
-            expContent.add(textArea, 0, 1);
+                GridPane expContent = new GridPane();
+                expContent.setMaxWidth(Double.MAX_VALUE);
+                expContent.add(label, 0, 0);
+                expContent.add(textArea, 0, 1);
 
-            alert.getDialogPane().setExpandableContent(expContent);
+                alert.getDialogPane().setExpandableContent(expContent);
 
-            alert.showAndWait();
+                alert.showAndWait();
+            } else {
+                //noinspection ThrowableResultOfMethodCallIgnored
+                Throwable t = getTop(ex);
+
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setTitle(t.getClass().getSimpleName());
+                alert.setHeaderText(text);
+                alert.setContentText(t.getMessage());
+
+                alert.showAndWait();
+            }
         });
     }
 
     private static <T> T getSelectedItem(ComboBox<T> comboBox) {
         int index = comboBox.getSelectionModel().getSelectedIndex();
         return index < 0 ? null : comboBox.getItems().get(index);
+    }
+
+    private static Throwable getTop(Throwable t) {
+        while (t.getCause() != null)
+            t = t.getCause();
+        return t;
     }
 }
