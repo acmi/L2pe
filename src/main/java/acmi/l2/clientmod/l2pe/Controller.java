@@ -21,6 +21,10 @@
  */
 package acmi.l2.clientmod.l2pe;
 
+import acmi.l2.clientmod.io.DataOutput;
+import acmi.l2.clientmod.io.DataOutputStream;
+import acmi.l2.clientmod.io.ObjectOutput;
+import acmi.l2.clientmod.io.ObjectOutputStream;
 import acmi.l2.clientmod.io.*;
 import acmi.l2.clientmod.properties.control.PropertiesEditor;
 import acmi.l2.clientmod.unreal.Environment;
@@ -43,14 +47,13 @@ import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
+import javafx.stage.StageStyle;
 import javafx.util.Pair;
 import javafx.util.StringConverter;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.PrintWriter;
-import java.io.StringWriter;
+import java.io.*;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
@@ -70,6 +73,10 @@ public class Controller implements Initializable {
     private static final boolean SAVE_DEFAULTS = System.getProperty("L2pe.saveDefaults", "false").equalsIgnoreCase("true");
     private static final boolean SHOW_STACKTRACE = System.getProperty("L2pe.showStackTrace", "false").equalsIgnoreCase("true");
 
+    @FXML
+    private Menu packageMenu;
+    @FXML
+    private Menu entryMenu;
     @FXML
     private Separator folderSeparator;
     @FXML
@@ -101,6 +108,11 @@ public class Controller implements Initializable {
     private ObjectProperty<UnrealSerializerFactory> serializerFactory = new SimpleObjectProperty<>(this, "serializerFactory");
     private MapProperty<File, List<File>> packages = new SimpleMapProperty<>(this, "packages");
     private ObjectProperty<UnrealPackage> unrealPackage = new SimpleObjectProperty<>(this, "unrealPackage");
+    private ObjectProperty<UnrealPackage.ExportEntry> entry = new SimpleObjectProperty<>(this, "entry");
+    private ObjectProperty<Object> object = new SimpleObjectProperty<>(this, "object");
+
+    private BooleanBinding packageSelected = Bindings.createBooleanBinding(() -> Objects.nonNull(unrealPackage.get()), unrealPackage);
+    private BooleanBinding entrySelected = Bindings.createBooleanBinding(() -> Objects.nonNull(entry.get()), entry);
 
     private ExecutorService executor = Executors.newSingleThreadExecutor(r -> new Thread(r, "L2pe Executor") {{
         setDaemon(true);
@@ -218,7 +230,7 @@ public class Controller implements Initializable {
             }
         });
 
-        BooleanBinding packageSelected = Bindings.createBooleanBinding(() -> Objects.nonNull(unrealPackage.get()), unrealPackage);
+        packageMenu.disableProperty().bind(packageSelected.not());
         entrySeparator.visibleProperty().bind(packageSelected);
         addName.visibleProperty().bind(packageSelected);
         addImport.visibleProperty().bind(packageSelected);
@@ -242,6 +254,7 @@ public class Controller implements Initializable {
         entrySelector.getSelectionModel().selectedIndexProperty().addListener((observable) -> {
             properties.setStructName(null);
             properties.setPropertyList(null);
+            object.setValue(null);
 
             UnrealPackage.ExportEntry newValue = getSelectedItem(entrySelector);
 
@@ -253,6 +266,7 @@ public class Controller implements Initializable {
 
                 try {
                     Object obj = getSerializerFactory().getOrCreateObject(newValue);
+                    object.setValue(obj);
 
                     properties.setStructName(newValue.getObjectClass() == null ? newValue.getObjectSuperClass().getObjectFullName() : obj.getClassFullName());
                     properties.setPropertyList(FXCollections.observableList(obj.properties));
@@ -266,7 +280,8 @@ public class Controller implements Initializable {
             });
         });
 
-        BooleanBinding entrySelected = Bindings.createBooleanBinding(() -> Objects.nonNull(getSelectedItem(entrySelector)), entrySelector.getSelectionModel().selectedIndexProperty());
+        entry.bind(Bindings.createObjectBinding(() -> getSelectedItem(entrySelector), entrySelector.getSelectionModel().selectedIndexProperty()));
+        entryMenu.disableProperty().bind(entrySelected.not());
         save.visibleProperty().bind(entrySelected);
 
         loading.setVisible(false);
@@ -315,6 +330,9 @@ public class Controller implements Initializable {
     }
 
     public void addName() {
+        if (!packageSelected.get())
+            return;
+
         TextInputDialog dialog = new TextInputDialog();
         dialog.setTitle("Create name entry");
         dialog.setHeaderText(null);
@@ -340,6 +358,9 @@ public class Controller implements Initializable {
     }
 
     public void addImport() {
+        if (!packageSelected.get())
+            return;
+
         Dialog<Pair<String, String>> dialog = new Dialog<>();
         dialog.setTitle("Create import entry");
         dialog.setHeaderText(null);
@@ -389,6 +410,9 @@ public class Controller implements Initializable {
     }
 
     public void addExport() {
+        if (!packageSelected.get())
+            return;
+
         Dialog<String[]> dialog = new Dialog<>();
         dialog.setTitle("Create package entry");
         dialog.setHeaderText(null);
@@ -526,6 +550,9 @@ public class Controller implements Initializable {
     }
 
     public void save() {
+        if (!entrySelected.get())
+            return;
+
         UnrealPackage.ExportEntry selected = getSelectedItem(entrySelector);
 
         if (selected == null)
@@ -568,6 +595,81 @@ public class Controller implements Initializable {
                 Platform.runLater(() -> loading.setVisible(false));
             }
         });
+    }
+
+    public void exportProperties() {
+        if (!entrySelected.get())
+            return;
+
+        if (object.get() == null)
+            return;
+
+        executor.execute(() -> {
+            Platform.runLater(() -> loading.setVisible(true));
+            try {
+                CharSequence text = Decompiler.decompileProperties(object.get(), getSerializerFactory(), 0);
+                if (text.length() != 0) {
+                    Platform.runLater(() -> {
+                        FileChooser fileChooser = new FileChooser();
+                        fileChooser.setTitle("Save properties");
+                        fileChooser.getExtensionFilters().addAll(
+                                new FileChooser.ExtensionFilter("Text files", "*.txt"),
+                                new FileChooser.ExtensionFilter("All files", "*.*"));
+
+                        File selected = fileChooser.showSaveDialog(application.getStage());
+                        if (selected == null)
+                            return;
+
+                        executor.execute(() -> {
+                            Platform.runLater(() -> loading.setVisible(true));
+                            try (Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(selected)), "UTF-8")) {
+                                writer.write(text.toString());
+                            } catch (IOException e) {
+                                log.log(Level.SEVERE, e, () -> "Couldn't save properties text");
+
+                                showException("Couldn't save properties text", e);
+                            } finally {
+                                Platform.runLater(() -> loading.setVisible(false));
+                            }
+                        });
+                    });
+                }
+            } catch (Exception e) {
+                log.log(Level.SEVERE, e, () -> "Couldn't generate properties text");
+
+                showException("Couldn't generate properties text", e);
+            } finally {
+                Platform.runLater(() -> loading.setVisible(false));
+            }
+        });
+    }
+
+    public void about() {
+        Dialog dialog = new Dialog();
+        dialog.initStyle(StageStyle.UTILITY);
+        dialog.setTitle("About");
+
+        Label name = new Label("L2pe");
+        Label version = new Label("Version: " + application.getApplicationVersion());
+        Label jre = new Label("JRE: " + System.getProperty("java.version"));
+        Label jvm = new Label("JVM: " + System.getProperty("java.vm.name") + " by " + System.getProperty("java.vendor"));
+        Hyperlink link = new Hyperlink("GitHub");
+        link.setOnAction(event -> application.getHostServices().showDocument("https://github.com/acmi/L2pe"));
+
+        VBox content = new VBox(name, version, jre, jvm, link);
+        VBox.setMargin(jre, new Insets(10, 0, 0, 0));
+        VBox.setMargin(link, new Insets(10, 0, 0, 0));
+
+        DialogPane pane = new DialogPane();
+        pane.setContent(content);
+        pane.getButtonTypes().addAll(ButtonType.OK);
+        dialog.setDialogPane(pane);
+
+        dialog.showAndWait();
+    }
+
+    public void exit() {
+        Platform.exit();
     }
 
     private void showException(String text, Throwable ex) {

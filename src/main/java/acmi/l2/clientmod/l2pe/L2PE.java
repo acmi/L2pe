@@ -43,16 +43,20 @@ public class L2PE extends Application {
     private static final Logger log = Logger.getLogger(L2PE.class.getName());
 
     private Stage stage;
+    private String version;
 
     Stage getStage() {
         return stage;
     }
 
+    public String getApplicationVersion() {
+        return version;
+    }
+
     @Override
     public void start(Stage stage) throws Exception {
         this.stage = stage;
-
-        String version = readAppVersion();
+        this.version = readAppVersion();
 
         FXMLLoader loader = new FXMLLoader(getClass().getResource("main.fxml"));
         stage.setScene(new Scene(loader.load()));
