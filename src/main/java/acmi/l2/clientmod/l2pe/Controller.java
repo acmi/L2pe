@@ -564,6 +564,7 @@ public class Controller extends ControllerBase implements Initializable {
                     fileChooser.getExtensionFilters().addAll(
                             new FileChooser.ExtensionFilter("Text files", "*.txt"),
                             new FileChooser.ExtensionFilter("All files", "*.*"));
+                    fileChooser.setInitialFileName(getEntry().getObjectInnerFullName());
 
                     File selected = fileChooser.showSaveDialog(application.getStage());
                     if (selected == null)
