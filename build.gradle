@@ -1,5 +1,5 @@
 group 'acmi.l2.clientmod'
-version '2.2'
+version '2.3-SNAPSHOT'
 
 apply plugin: 'java'
 
