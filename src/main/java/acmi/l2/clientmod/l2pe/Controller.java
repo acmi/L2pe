@@ -29,7 +29,6 @@ import acmi.l2.clientmod.io.*;
 import acmi.l2.clientmod.properties.control.PropertiesEditor;
 import acmi.l2.clientmod.unreal.Environment;
 import acmi.l2.clientmod.unreal.UnrealRuntimeContext;
-import acmi.l2.clientmod.unreal.UnrealSerializerFactory;
 import acmi.l2.clientmod.unreal.core.Class;
 import acmi.l2.clientmod.unreal.core.Object;
 import acmi.l2.clientmod.unreal.engine.Texture;
@@ -39,7 +38,8 @@ import javafx.application.Platform;
 import javafx.beans.Observable;
 import javafx.beans.binding.Bindings;
 import javafx.beans.binding.BooleanBinding;
-import javafx.beans.property.*;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
@@ -56,8 +56,7 @@ import javafx.util.StringConverter;
 import java.io.*;
 import java.net.URL;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -67,7 +66,7 @@ import static acmi.l2.clientmod.io.UnrealPackage.ObjectFlag.HasStack;
 import static acmi.l2.clientmod.io.UnrealPackage.ObjectFlag.Standalone;
 import static acmi.l2.clientmod.unreal.UnrealSerializerFactory.IS_STRUCT;
 
-public class Controller implements Initializable {
+public class Controller extends ControllerBase implements Initializable {
     private static final Logger log = Logger.getLogger(Controller.class.getName());
 
     private static final boolean SAVE_DEFAULTS = System.getProperty("L2pe.saveDefaults", "false").equalsIgnoreCase("true");
@@ -104,19 +103,6 @@ public class Controller implements Initializable {
 
     private L2PE application;
     private ObjectProperty<File> initialDirectory = new SimpleObjectProperty<>(this, "initialDirectory");
-    private ObjectProperty<Environment> environment = new SimpleObjectProperty<>(this, "environment");
-    private ObjectProperty<UnrealSerializerFactory> serializerFactory = new SimpleObjectProperty<>(this, "serializerFactory");
-    private MapProperty<File, List<File>> packages = new SimpleMapProperty<>(this, "packages");
-    private ObjectProperty<UnrealPackage> unrealPackage = new SimpleObjectProperty<>(this, "unrealPackage");
-    private ObjectProperty<UnrealPackage.ExportEntry> entry = new SimpleObjectProperty<>(this, "entry");
-    private ObjectProperty<Object> object = new SimpleObjectProperty<>(this, "object");
-
-    private BooleanBinding packageSelected = Bindings.createBooleanBinding(() -> Objects.nonNull(unrealPackage.get()), unrealPackage);
-    private BooleanBinding entrySelected = Bindings.createBooleanBinding(() -> Objects.nonNull(entry.get()), entry);
-
-    private ExecutorService executor = Executors.newSingleThreadExecutor(r -> new Thread(r, "L2pe Executor") {{
-        setDaemon(true);
-    }});
 
     public void setApplication(L2PE application) {
         this.application = application;
@@ -134,24 +120,21 @@ public class Controller implements Initializable {
         this.initialDirectory.set(initialDirectory);
     }
 
-    public Environment getEnvironment() {
-        return environment.get();
+    @Override
+    protected void execute(Task task, Consumer<Exception> exceptionHandler) {
+        super.execute(wrap(task), exceptionHandler);
     }
 
-    public ObjectProperty<Environment> environmentProperty() {
-        return environment;
-    }
+    private Task wrap(Task task) {
+        return () -> {
+            Platform.runLater(() -> loading.setVisible(true));
 
-    public void setEnvironment(Environment environment) {
-        this.environment.set(environment);
-    }
-
-    public UnrealSerializerFactory getSerializerFactory() {
-        return serializerFactory.get();
-    }
-
-    public ReadOnlyObjectProperty<UnrealSerializerFactory> serializerFactoryProperty() {
-        return serializerFactory;
+            try {
+                task.run();
+            } finally {
+                Platform.runLater(() -> loading.setVisible(false));
+            }
+        };
     }
 
     @Override
@@ -162,25 +145,19 @@ public class Controller implements Initializable {
                 L2PE.getPrefs().put("initialDirectory", newVal.getPath());
         });
 
-        environmentProperty().addListener(observable -> {
-            packages.setValue(FXCollections.observableMap(getEnvironment().listFiles()
-                    .collect(Collectors.groupingBy(File::getParentFile))));
-        });
-        serializerFactory.bind(Bindings.createObjectBinding(() -> getEnvironment() != null ? new UnrealSerializerFactory(getEnvironment()) : null, environmentProperty()));
         properties.serializerProperty().bind(serializerFactoryProperty());
-        properties.unrealPackageProperty().bind(unrealPackage);
-        packages.addListener((Observable observable) -> {
+        properties.unrealPackageProperty().bind(unrealPackageProperty());
+        packagesProperty().addListener((Observable observable) -> {
             folderSelector.getSelectionModel().clearSelection();
             folderSelector.getItems().clear();
-            folderSelector.getItems().addAll(packages.keySet()
+            folderSelector.getItems().addAll(getPackages().keySet()
                     .stream()
                     .sorted((f1, f2) -> f1.getName().compareToIgnoreCase(f2.getName()))
                     .collect(Collectors.toList()));
         });
 
-        BooleanBinding environmentSelected = Bindings.createBooleanBinding(() -> Objects.nonNull(getEnvironment()), environmentProperty());
-        folderSeparator.visibleProperty().bind(environmentSelected);
-        folderSelector.visibleProperty().bind(environmentSelected);
+        folderSeparator.visibleProperty().bind(environmentSelected());
+        folderSelector.visibleProperty().bind(environmentSelected());
         AutoCompleteComboBox.autoCompleteComboBox(folderSelector, AutoCompleteComboBox.AutoCompleteMode.CONTAINING);
         StringConverter<File> name = new StringConverter<File>() {
             @Override
@@ -206,7 +183,7 @@ public class Controller implements Initializable {
             if (folderSelector.getSelectionModel().getSelectedIndex() < 0)
                 return;
 
-            packageSelector.getItems().addAll(packages.get(getSelectedItem(folderSelector)));
+            packageSelector.getItems().addAll(getPackages().get(getSelectedItem(folderSelector)));
 
             AutoCompleteComboBox.autoCompleteComboBox(packageSelector, AutoCompleteComboBox.AutoCompleteMode.CONTAINING);
         });
@@ -214,29 +191,31 @@ public class Controller implements Initializable {
             entrySelector.getSelectionModel().clearSelection();
             entrySelector.getItems().clear();
 
-            unrealPackage.setValue(null);
+            setUnrealPackage(null);
 
             File newValue = getSelectedItem(packageSelector);
 
             if (newValue == null)
                 return;
 
-            try (UnrealPackage up = new UnrealPackage(newValue, true)) {
-                unrealPackage.setValue(up);
-            } catch (Exception e) {
+            execute(() -> {
+                try (UnrealPackage up = new UnrealPackage(newValue, true)) {
+                    Platform.runLater(() -> setUnrealPackage(up));
+                }
+            }, e -> {
                 log.log(Level.SEVERE, e, () -> "Couldn't load: " + newValue);
 
                 showException("Couldn't load: " + newValue, e);
-            }
+            });
         });
 
-        packageMenu.disableProperty().bind(packageSelected.not());
-        entrySeparator.visibleProperty().bind(packageSelected);
-        addName.visibleProperty().bind(packageSelected);
-        addImport.visibleProperty().bind(packageSelected);
-        addExport.visibleProperty().bind(packageSelected);
-        entrySelector.visibleProperty().bind(packageSelected);
-        unrealPackage.addListener((observable, oldValue, newValue) -> {
+        packageMenu.disableProperty().bind(packageSelected().not());
+        entrySeparator.visibleProperty().bind(packageSelected());
+        addName.visibleProperty().bind(packageSelected());
+        addImport.visibleProperty().bind(packageSelected());
+        addExport.visibleProperty().bind(packageSelected());
+        entrySelector.visibleProperty().bind(packageSelected());
+        unrealPackageProperty().addListener((observable, oldValue, newValue) -> {
             entrySelector.getSelectionModel().clearSelection();
             entrySelector.getItems().clear();
 
@@ -251,38 +230,34 @@ public class Controller implements Initializable {
 
             AutoCompleteComboBox.autoCompleteComboBox(entrySelector, AutoCompleteComboBox.AutoCompleteMode.CONTAINING);
         });
-        entrySelector.getSelectionModel().selectedIndexProperty().addListener((observable) -> {
-            properties.setStructName(null);
-            properties.setPropertyList(null);
-            object.setValue(null);
 
-            UnrealPackage.ExportEntry newValue = getSelectedItem(entrySelector);
+        entrySelector.getSelectionModel().selectedIndexProperty().addListener(observable -> {
+            setEntry(getSelectedItem(entrySelector));
+        });
+        entryProperty().addListener((observable, oldValue, newValue) -> {
+            setObject(null);
 
             if (newValue == null)
                 return;
 
-            executor.execute(() -> {
-                Platform.runLater(() -> loading.setVisible(true));
+            execute(() -> setObject(getSerializerFactory().getOrCreateObject(newValue)), e -> {
+                log.log(Level.SEVERE, e, () -> "Couldn't load entry");
 
-                try {
-                    Object obj = getSerializerFactory().getOrCreateObject(newValue);
-                    object.setValue(obj);
-
-                    properties.setStructName(newValue.getObjectClass() == null ? newValue.getObjectSuperClass().getObjectFullName() : obj.getClassFullName());
-                    properties.setPropertyList(FXCollections.observableList(obj.properties));
-                } catch (Exception e) {
-                    log.log(Level.SEVERE, e, () -> "Couldn't load entry");
-
-                    showException("Couldn't load entry", e);
-                } finally {
-                    Platform.runLater(() -> loading.setVisible(false));
-                }
+                showException("Couldn't load entry", e);
             });
         });
+        objectProperty().addListener((observable, oldValue, newValue) -> {
+            properties.setStructName(null);
+            properties.setPropertyList(null);
 
-        entry.bind(Bindings.createObjectBinding(() -> getSelectedItem(entrySelector), entrySelector.getSelectionModel().selectedIndexProperty()));
-        entryMenu.disableProperty().bind(entrySelected.not());
-        save.visibleProperty().bind(entrySelected);
+            if (newValue == null)
+                return;
+
+            properties.setStructName(newValue.entry.getObjectClass() == null ? newValue.entry.getObjectSuperClass().getObjectFullName() : newValue.getClassFullName());
+            properties.setPropertyList(FXCollections.observableList(newValue.properties));
+        });
+        entryMenu.disableProperty().bind(entrySelected().not());
+        save.visibleProperty().bind(entrySelected());
 
         loading.setVisible(false);
     }
@@ -314,23 +289,15 @@ public class Controller implements Initializable {
             return;
         }
 
-        executor.execute(() -> {
-            Platform.runLater(() -> loading.setVisible(true));
+        execute(() -> getSerializerFactory().getOrCreateObject("Engine.Actor", IS_STRUCT), e -> {
+            log.log(Level.SEVERE, e, () -> "Couldn't load Engine.Actor");
 
-            try {
-                getSerializerFactory().getOrCreateObject("Engine.Actor", IS_STRUCT);
-            } catch (Exception e) {
-                log.log(Level.SEVERE, e, () -> "Couldn't load Engine.Actor");
-
-                showException("Couldn't load Engine.Actor", e);
-            } finally {
-                Platform.runLater(() -> loading.setVisible(false));
-            }
+            showException("Couldn't load Engine.Actor", e);
         });
     }
 
     public void addName() {
-        if (!packageSelected.get())
+        if (!isPackageSelected())
             return;
 
         TextInputDialog dialog = new TextInputDialog();
@@ -338,27 +305,23 @@ public class Controller implements Initializable {
         dialog.setHeaderText(null);
         dialog.setContentText("Name string:");
         dialog.showAndWait()
-                .ifPresent(name -> executor.execute(() -> {
-                            Platform.runLater(() -> loading.setVisible(true));
-
-                            try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
+                .ifPresent(name -> execute(() -> {
+                            try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
                                 up.addNameEntries(name);
-                                Platform.runLater(() -> unrealPackage.set(up));
+                                Platform.runLater(() -> setUnrealPackage(up));
 
                                 getEnvironment().markInvalid(up.getPackageName());
-                            } catch (Exception e) {
-                                log.log(Level.SEVERE, e, () -> "Couldn't add name entry");
-
-                                showException("Couldn't add name entry", e);
-                            } finally {
-                                Platform.runLater(() -> loading.setVisible(false));
                             }
+                        }, e -> {
+                            log.log(Level.SEVERE, e, () -> "Couldn't add name entry");
+
+                            showException("Couldn't add name entry", e);
                         }
                 ));
     }
 
     public void addImport() {
-        if (!packageSelected.get())
+        if (!isPackageSelected())
             return;
 
         Dialog<Pair<String, String>> dialog = new Dialog<>();
@@ -391,26 +354,22 @@ public class Controller implements Initializable {
         });
 
         dialog.showAndWait()
-                .ifPresent(nameClass -> executor.execute(() -> {
-                    Platform.runLater(() -> loading.setVisible(true));
-
-                    try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
+                .ifPresent(nameClass -> execute(() -> {
+                    try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
                         up.addImportEntries(Collections.singletonMap(nameClass.getKey(), nameClass.getValue()));
-                        Platform.runLater(() -> unrealPackage.set(up));
+                        Platform.runLater(() -> setUnrealPackage(up));
 
                         getEnvironment().markInvalid(up.getPackageName());
-                    } catch (Exception e) {
-                        log.log(Level.SEVERE, e, () -> "Couldn't add import entry");
-
-                        showException("Couldn't add import entry", e);
-                    } finally {
-                        Platform.runLater(() -> loading.setVisible(false));
                     }
+                }, e -> {
+                    log.log(Level.SEVERE, e, () -> "Couldn't add import entry");
+
+                    showException("Couldn't add import entry", e);
                 }));
     }
 
     public void addExport() {
-        if (!packageSelected.get())
+        if (!isPackageSelected())
             return;
 
         Dialog<String[]> dialog = new Dialog<>();
@@ -447,10 +406,8 @@ public class Controller implements Initializable {
         });
 
         dialog.showAndWait()
-                .ifPresent(nameClass -> executor.execute(() -> {
-                    Platform.runLater(() -> loading.setVisible(true));
-
-                    try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
+                .ifPresent(nameClass -> execute(() -> {
+                    try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
                         String objName = nameClass[1];
                         int flags = UnrealPackage.DEFAULT_OBJECT_FLAGS;
                         switch (nameClass[0]) {
@@ -536,21 +493,19 @@ public class Controller implements Initializable {
                                 break;
                             }
                         }
-                        Platform.runLater(() -> unrealPackage.set(up));
+                        Platform.runLater(() -> setUnrealPackage(up));
 
                         getEnvironment().markInvalid(up.getPackageName());
-                    } catch (Exception e) {
-                        log.log(Level.SEVERE, e, () -> "Couldn't add export entry");
-
-                        showException("Couldn't add export entry", e);
-                    } finally {
-                        Platform.runLater(() -> loading.setVisible(false));
                     }
+                }, e -> {
+                    log.log(Level.SEVERE, e, () -> "Couldn't add export entry");
+
+                    showException("Couldn't add export entry", e);
                 }));
     }
 
     public void save() {
-        if (!entrySelected.get())
+        if (!isEntrySelected())
             return;
 
         UnrealPackage.ExportEntry selected = getSelectedItem(entrySelector);
@@ -558,10 +513,8 @@ public class Controller implements Initializable {
         if (selected == null)
             return;
 
-        executor.execute(() -> {
-            Platform.runLater(() -> loading.setVisible(true));
-
-            try (UnrealPackage up = new UnrealPackage(unrealPackage.get().getFile().openNewSession(false))) {
+        execute(() -> {
+            try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
                 UnrealPackage.ExportEntry entry = up.getExportTable().get(selected.getIndex());
                 Object object = getSerializerFactory().getOrCreateObject(entry);
                 if (!SAVE_DEFAULTS)
@@ -585,62 +538,52 @@ public class Controller implements Initializable {
                         objectOutput.writeBytes(object.unreadBytes);
                     entry.setObjectRawData(baos.toByteArray());
                 }
-                unrealPackage.set(up);
+                setUnrealPackage(up);
                 entrySelector.getSelectionModel().select(entry);
-            } catch (Exception e) {
-                log.log(Level.SEVERE, e, () -> "Couldn't save entry");
-
-                showException("Couldn't save entry", e);
-            } finally {
-                Platform.runLater(() -> loading.setVisible(false));
             }
+        }, e -> {
+            log.log(Level.SEVERE, e, () -> "Couldn't save entry");
+
+            showException("Couldn't save entry", e);
         });
     }
 
     public void exportProperties() {
-        if (!entrySelected.get())
+        if (!isEntrySelected())
             return;
 
-        if (object.get() == null)
+        if (getObject() == null)
             return;
 
-        executor.execute(() -> {
-            Platform.runLater(() -> loading.setVisible(true));
-            try {
-                CharSequence text = Decompiler.decompileProperties(object.get(), getSerializerFactory(), 0);
-                if (text.length() != 0) {
-                    Platform.runLater(() -> {
-                        FileChooser fileChooser = new FileChooser();
-                        fileChooser.setTitle("Save properties");
-                        fileChooser.getExtensionFilters().addAll(
-                                new FileChooser.ExtensionFilter("Text files", "*.txt"),
-                                new FileChooser.ExtensionFilter("All files", "*.*"));
+        execute(() -> {
+            CharSequence text = Decompiler.decompileProperties(getObject(), getSerializerFactory(), 0);
+            if (text.length() != 0) {
+                Platform.runLater(() -> {
+                    FileChooser fileChooser = new FileChooser();
+                    fileChooser.setTitle("Save properties");
+                    fileChooser.getExtensionFilters().addAll(
+                            new FileChooser.ExtensionFilter("Text files", "*.txt"),
+                            new FileChooser.ExtensionFilter("All files", "*.*"));
 
-                        File selected = fileChooser.showSaveDialog(application.getStage());
-                        if (selected == null)
-                            return;
+                    File selected = fileChooser.showSaveDialog(application.getStage());
+                    if (selected == null)
+                        return;
 
-                        executor.execute(() -> {
-                            Platform.runLater(() -> loading.setVisible(true));
-                            try (Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(selected)), "UTF-8")) {
-                                writer.write(text.toString());
-                            } catch (IOException e) {
-                                log.log(Level.SEVERE, e, () -> "Couldn't save properties text");
+                    execute(() -> {
+                        try (Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(selected)), "UTF-8")) {
+                            writer.write(text.toString());
+                        }
+                    }, e -> {
+                        log.log(Level.SEVERE, e, () -> "Couldn't save properties text");
 
-                                showException("Couldn't save properties text", e);
-                            } finally {
-                                Platform.runLater(() -> loading.setVisible(false));
-                            }
-                        });
+                        showException("Couldn't save properties text", e);
                     });
-                }
-            } catch (Exception e) {
-                log.log(Level.SEVERE, e, () -> "Couldn't generate properties text");
-
-                showException("Couldn't generate properties text", e);
-            } finally {
-                Platform.runLater(() -> loading.setVisible(false));
+                });
             }
+        }, e -> {
+            log.log(Level.SEVERE, e, () -> "Couldn't generate properties text");
+
+            showException("Couldn't generate properties text", e);
         });
     }
 
