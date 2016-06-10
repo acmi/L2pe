@@ -27,6 +27,7 @@ import acmi.l2.clientmod.unreal.core.*;
 import acmi.l2.clientmod.unreal.core.Enum;
 import acmi.l2.clientmod.unreal.core.Object;
 import acmi.l2.clientmod.unreal.properties.L2Property;
+import acmi.l2.clientmod.unreal.properties.PropertiesUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,13 +45,18 @@ public class Decompiler {
     }
 
     public static CharSequence decompileProperties(Object object, UnrealSerializerFactory objectFactory, int indent) {
-        Stream.Builder<CharSequence> properties = Stream.builder();
-
         UnrealPackage.ExportEntry e = object.entry;
         UnrealPackage up = e.getUnrealPackage();
-
+        String structName = e.getObjectClass() == null ? e.getObjectSuperClass().getObjectFullName() : e.getFullClassName();
         List<L2Property> props = new ArrayList<>(object.properties);
-        removeDefaults(props, e.getObjectClass() == null ? e.getObjectSuperClass().getObjectFullName() : e.getFullClassName(), objectFactory, up);
+
+        return decompileProperties(props, structName, up, objectFactory, indent);
+    }
+
+    public static CharSequence decompileProperties(List<L2Property> props, String structName, UnrealPackage up, UnrealSerializerFactory objectFactory, int indent) {
+        Stream.Builder<CharSequence> properties = Stream.builder();
+
+        removeDefaults(props, structName, objectFactory, up);
 
         props.forEach(property -> {
             StringBuilder sb = new StringBuilder();
@@ -104,7 +110,7 @@ public class Decompiler {
                     sb.append(String.format(Locale.US, "%f", (Float) obj));
                 } else if (template instanceof ObjectProperty) {
                     UnrealPackage.Entry entry = up.objectReference((Integer) obj);
-                    if (needExport(entry, template)) {
+                    if (needExport(template, objectFactory)) {
                         properties.add(toT3d(instantiate((UnrealPackage.ExportEntry) entry, objectFactory), objectFactory, indent));
                     }
                     sb.append(property.getName());
@@ -146,10 +152,13 @@ public class Decompiler {
                     for (int j = 0; j < list.size(); j++) {
                         java.lang.Object innerObj = list.get(j);
 
-                        if (innerProperty instanceof ObjectProperty) {
-                            UnrealPackage.Entry entry = up.objectReference((Integer) innerObj);
-                            if (needExport(entry, innerProperty)) {
+                        if (needExport(innerProperty, objectFactory)) {
+                            if (innerProperty instanceof ObjectProperty) {
+                                UnrealPackage.Entry entry = up.objectReference((Integer) innerObj);
                                 properties.add(toT3d(instantiate((UnrealPackage.ExportEntry) entry, objectFactory), objectFactory, indent));
+                            } else if (innerProperty instanceof StructProperty) {
+                                properties.add(toT3d((List<L2Property>) innerObj, "", ((StructProperty)innerProperty).struct.getFullName(), up, objectFactory, indent));
+                                throw new RuntimeException("FIXME");
                             }
                         }
 
@@ -271,21 +280,28 @@ public class Decompiler {
         return struct.stream().map(p -> inlineProperty(p, up, objectFactory, false)).collect(Collectors.joining(",", "(", ")"));
     }
 
-    public static boolean needExport(UnrealPackage.Entry entry, Property template) {
-        return entry != null &&
-                entry instanceof UnrealPackage.ExportEntry &&
-                (Property.CPF.getFlags(template.propertyFlags).contains(Property.CPF.ExportObject) ||
-                        Property.CPF.getFlags(template.propertyFlags).contains(Property.CPF.EditInlineNotify)); //FIXME
+    public static boolean needExport(Property template, UnrealSerializerFactory objectFactory) {
+        return flags(template, objectFactory);
+    }
 
+    private static boolean flags(Property template, UnrealSerializerFactory objectFactory) {
+        return Property.CPF.getFlags(template.propertyFlags).contains(Property.CPF.ExportObject) ||
+                Property.CPF.getFlags(template.propertyFlags).contains(Property.CPF.EditInlineNotify) ||
+                (template instanceof ArrayProperty && flags(((ArrayProperty) template).inner, objectFactory)) ||
+                (template instanceof StructProperty && PropertiesUtil.getPropertyFields(objectFactory, ((StructProperty) template).struct.getFullName()).filter(p -> Decompiler.flags(p, objectFactory)).findAny().isPresent());
     }
 
     public static CharSequence toT3d(Object object, UnrealSerializerFactory objectFactory, int indent) {
+        return toT3d(object.properties, object.entry.getObjectFullName(), object.entry.getFullClassName(), object.entry.getUnrealPackage(), objectFactory, indent);
+    }
+
+    public static CharSequence toT3d(List<L2Property> props, String name, String clazz, UnrealPackage up, UnrealSerializerFactory objectFactory, int indent) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("Begin Object");
-        sb.append(" Class=").append(object.entry.getObjectClass().getObjectName().getName());
-        sb.append(" Name=").append(object.entry.getObjectName().getName());
-        sb.append(newLine(indent + 1)).append(decompileProperties(object, objectFactory, indent + 1));
+        sb.append(" Class=").append(clazz.substring(clazz.lastIndexOf(".") + 1));
+        sb.append(" Name=").append(name.substring(name.lastIndexOf(".") + 1));
+        sb.append(newLine(indent + 1)).append(decompileProperties(props, clazz, up, objectFactory, indent + 1));
         sb.append(newLine(indent)).append("End Object");
 
         return sb;
