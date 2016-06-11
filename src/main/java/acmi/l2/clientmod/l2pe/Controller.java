@@ -97,6 +97,8 @@ public class Controller extends ControllerBase implements Initializable {
     @FXML
     private Button save;
     @FXML
+    private CheckMenuItem showAllProperties;
+    @FXML
     private PropertiesEditor properties;
     @FXML
     private ProgressIndicator loading;
@@ -145,6 +147,7 @@ public class Controller extends ControllerBase implements Initializable {
                 L2PE.getPrefs().put("initialDirectory", newVal.getPath());
         });
 
+        properties.editableOnlyProperty().bind(showAllProperties.selectedProperty().not());
         properties.serializerProperty().bind(serializerFactoryProperty());
         properties.unrealPackageProperty().bind(unrealPackageProperty());
         packagesProperty().addListener((Observable observable) -> {

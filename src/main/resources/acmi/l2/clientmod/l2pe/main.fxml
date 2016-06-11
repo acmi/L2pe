@@ -24,6 +24,7 @@ SOFTWARE.
 
 <?import acmi.l2.clientmod.properties.control.PropertiesEditor?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckMenuItem?>
 <?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.Menu?>
 <?import javafx.scene.control.MenuBar?>
@@ -92,6 +93,11 @@ SOFTWARE.
                            </accelerator>
                         </MenuItem>
                     </items>
+                  </Menu>
+                  <Menu mnemonicParsing="false" text="Settings">
+                     <items>
+                        <CheckMenuItem fx:id="showAllProperties" mnemonicParsing="false" text="Show all properties" />
+                     </items>
                   </Menu>
                 <Menu mnemonicParsing="false" text="Help">
                   <items>
