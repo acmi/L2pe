@@ -14,7 +14,7 @@ repositories {
 }
 
 dependencies {
-    compile group: 'acmi.l2.clientmod', name: 'pec', version: '1.2'
+    compile group: 'acmi.l2.clientmod', name: 'pec', version: '1.2.1'
 }
 
 jar {
