@@ -35,7 +35,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static acmi.l2.clientmod.properties.control.PropertiesEditor.removeDefaults;
+import static acmi.l2.clientmod.unreal.properties.PropertiesUtil.removeDefaults;
 
 @SuppressWarnings("unchecked")
 public class Decompiler {
@@ -67,8 +67,8 @@ public class Decompiler {
                     assert obj != null;
                 }
 
-                if (obj == null) {
-                    if (template instanceof StructProperty)
+                if (template instanceof StructProperty) {
+                    if (obj == null || ((List) obj).isEmpty())
                         continue;
                 }
 

@@ -521,7 +521,7 @@ public class Controller extends ControllerBase implements Initializable {
                 UnrealPackage.ExportEntry entry = up.getExportTable().get(selected.getIndex());
                 Object object = getSerializerFactory().getOrCreateObject(entry);
                 if (!SAVE_DEFAULTS)
-                    PropertiesEditor.removeDefaults(object.properties, entry.getObjectClass() == null ? entry.getObjectSuperClass().getObjectFullName() : entry.getFullClassName(), getSerializerFactory(), selected.getUnrealPackage());
+                    PropertiesUtil.removeDefaults(object.properties, entry.getObjectClass() == null ? entry.getObjectSuperClass().getObjectFullName() : entry.getFullClassName(), getSerializerFactory(), selected.getUnrealPackage());
                 UnrealRuntimeContext context = new UnrealRuntimeContext(entry, getSerializerFactory());
                 {
                     ByteArrayOutputStream baos = new ByteArrayOutputStream();
