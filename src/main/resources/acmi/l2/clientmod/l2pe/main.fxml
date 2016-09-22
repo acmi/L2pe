@@ -119,6 +119,7 @@ SOFTWARE.
                   <Button fx:id="addExport" mnemonicParsing="false" onAction="#addExport" text="+export" />
                   <ComboBox fx:id="entrySelector" prefWidth="200.0" />
                   <Button fx:id="save" mnemonicParsing="false" onAction="#save" text="save" />
+                  <Button fx:id="copy" mnemonicParsing="false" onAction="#copy" text="copy" />
                </items>
             </ToolBar>
             <PropertiesEditor fx:id="properties" editableOnly="true" hideCategories="true" VBox.vgrow="ALWAYS" />

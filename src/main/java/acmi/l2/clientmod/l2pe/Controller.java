@@ -23,7 +23,7 @@ package acmi.l2.clientmod.l2pe;
 
 import acmi.l2.clientmod.io.ObjectOutput;
 import acmi.l2.clientmod.io.ObjectOutputStream;
-import acmi.l2.clientmod.io.*;
+import acmi.l2.clientmod.io.UnrealPackage;
 import acmi.l2.clientmod.properties.control.PropertiesEditor;
 import acmi.l2.clientmod.unreal.Environment;
 import acmi.l2.clientmod.unreal.UnrealRuntimeContext;
@@ -53,7 +53,10 @@ import javafx.util.StringConverter;
 
 import java.io.*;
 import java.net.URL;
-import java.util.*;
+import java.util.Collections;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.ResourceBundle;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -92,6 +95,8 @@ public class Controller extends ControllerBase implements Initializable {
     private Button addExport;
     @FXML
     private Button save;
+    @FXML
+    private Button copy;
     @FXML
     private CheckMenuItem showAllProperties;
     @FXML
@@ -259,6 +264,7 @@ public class Controller extends ControllerBase implements Initializable {
         });
         entryMenu.disableProperty().bind(entrySelected().not());
         save.visibleProperty().bind(entrySelected());
+        copy.visibleProperty().bind(Bindings.createBooleanBinding(() -> canCopy(getObject()), objectProperty()));
 
         loading.setVisible(false);
     }
@@ -476,6 +482,52 @@ public class Controller extends ControllerBase implements Initializable {
 
             showException("Couldn't save entry", e);
         });
+    }
+
+    private static boolean canCopy(Object object) {
+        return object != null &&
+                object.getClass() == Object.class &&
+                (object.unreadBytes == null || object.unreadBytes.length == 0);
+    }
+
+    public void copy() {
+        if (!isEntrySelected())
+            return;
+
+        UnrealPackage.ExportEntry selected = getSelectedItem(entrySelector);
+
+        if (selected == null)
+            return;
+
+        Object object = getObject();
+        if (!canCopy(object))
+            return;
+
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Copy export entry");
+        dialog.setHeaderText(null);
+        dialog.setContentText("New name:");
+        dialog.showAndWait().ifPresent(name -> execute(() -> {
+            try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
+                up.addExportEntry(name,
+                        Optional.ofNullable(selected.getObjectClass()).map(UnrealPackage.Entry::getObjectFullName).orElse(null),
+                        Optional.ofNullable(selected.getObjectSuperClass()).map(UnrealPackage.Entry::getObjectFullName).orElse(null),
+                        selected.getObjectRawDataExternally(),
+                        selected.getObjectFlags());
+
+                getEnvironment().markInvalid(up.getPackageName());
+            }
+
+            Platform.runLater(() -> {
+                int selectedPackage = packageSelector.getSelectionModel().getSelectedIndex();
+                packageSelector.getSelectionModel().clearSelection();
+                packageSelector.getSelectionModel().select(selectedPackage);
+            });
+        }, e -> {
+            log.log(Level.SEVERE, e, () -> "Couldn't copy entry");
+
+            showException("Couldn't copy entry", e);
+        }));
     }
 
     public void exportProperties() {
