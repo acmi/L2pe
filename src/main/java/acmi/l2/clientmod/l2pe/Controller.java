@@ -65,6 +65,7 @@ import java.util.stream.Stream;
 import static acmi.l2.clientmod.io.UnrealPackage.ObjectFlag.HasStack;
 import static acmi.l2.clientmod.io.UnrealPackage.ObjectFlag.Standalone;
 import static acmi.l2.clientmod.unreal.UnrealSerializerFactory.IS_STRUCT;
+import static acmi.util.AutoCompleteComboBox.getSelectedItem;
 
 public class Controller extends ControllerBase implements Initializable {
     private static final Logger log = Logger.getLogger(Controller.class.getName());
@@ -663,11 +664,6 @@ public class Controller extends ControllerBase implements Initializable {
                 alert.showAndWait();
             }
         });
-    }
-
-    private static <T> T getSelectedItem(ComboBox<T> comboBox) {
-        int index = comboBox.getSelectionModel().getSelectedIndex();
-        return index < 0 ? null : comboBox.getItems().get(index);
     }
 
     private static Throwable getTop(Throwable t) {
