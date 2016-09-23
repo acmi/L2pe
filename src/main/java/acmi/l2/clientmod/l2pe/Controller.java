@@ -30,6 +30,7 @@ import acmi.l2.clientmod.unreal.UnrealRuntimeContext;
 import acmi.l2.clientmod.unreal.core.Class;
 import acmi.l2.clientmod.unreal.core.Object;
 import acmi.l2.clientmod.unreal.engine.Texture;
+import acmi.l2.clientmod.unreal.properties.L2Property;
 import acmi.l2.clientmod.unreal.properties.PropertiesUtil;
 import acmi.util.AutoCompleteComboBox;
 import javafx.application.Platform;
@@ -53,10 +54,7 @@ import javafx.util.StringConverter;
 
 import java.io.*;
 import java.net.URL;
-import java.util.Collections;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.ResourceBundle;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -486,8 +484,8 @@ public class Controller extends ControllerBase implements Initializable {
 
     private static boolean canCopy(Object object) {
         return object != null &&
-                object.getClass() == Object.class &&
-                (object.unreadBytes == null || object.unreadBytes.length == 0);
+                ((object.getClass() == Object.class && (object.unreadBytes == null || object.unreadBytes.length == 0)) ||
+                        (object instanceof Class && ((Class) object).child == null));
     }
 
     public void copy() {
@@ -509,11 +507,18 @@ public class Controller extends ControllerBase implements Initializable {
         dialog.setContentText("New name:");
         dialog.showAndWait().ifPresent(name -> execute(() -> {
             try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
-                up.addExportEntry(name,
-                        Optional.ofNullable(selected.getObjectClass()).map(UnrealPackage.Entry::getObjectFullName).orElse(null),
-                        Optional.ofNullable(selected.getObjectSuperClass()).map(UnrealPackage.Entry::getObjectFullName).orElse(null),
-                        selected.getObjectRawDataExternally(),
-                        selected.getObjectFlags());
+                if (object.getClass() == Object.class) {
+                    up.addExportEntry(name,
+                            Optional.ofNullable(selected.getObjectClass()).map(UnrealPackage.Entry::getObjectFullName).orElse(null),
+                            Optional.ofNullable(selected.getObjectSuperClass()).map(UnrealPackage.Entry::getObjectFullName).orElse(null),
+                            selected.getObjectRawDataExternally(),
+                            selected.getObjectFlags());
+
+                } else if (object instanceof Class) {
+                    List<L2Property> properties = new ArrayList<>(object.properties);
+                    PropertiesUtil.removeDefaults(properties, selected.getObjectSuperClass().getObjectFullName(), getSerializerFactory(), selected.getUnrealPackage());
+                    Util.createClass(getSerializerFactory(), up, name, selected.getObjectSuperClass().getObjectFullName(), selected.getObjectFlags(), properties);
+                }
 
                 getEnvironment().markInvalid(up.getPackageName());
             }
