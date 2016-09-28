@@ -39,7 +39,7 @@ SOFTWARE.
 
 <!--suppress JavaFxDefaultTag -->
 
-<AnchorPane xmlns="http://javafx.com/javafx/8.0.65" xmlns:fx="http://javafx.com/fxml/1" fx:controller="acmi.l2.clientmod.l2pe.Controller">
+<AnchorPane xmlns="http://javafx.com/javafx/8.0.65" xmlns:fx="http://javafx.com/fxml/1" fx:controller="acmi.l2.clientmod.l2pe.MainWndController">
    <children>
       <VBox AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
          <children>
@@ -62,16 +62,6 @@ SOFTWARE.
                 </Menu>
                 <Menu fx:id="packageMenu" mnemonicParsing="false" text="Package">
                   <items>
-                    <MenuItem mnemonicParsing="false" onAction="#addName" text="Add name entry">
-                           <accelerator>
-                              <KeyCodeCombination alt="UP" code="N" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                           </accelerator>
-                        </MenuItem>
-                        <MenuItem mnemonicParsing="false" onAction="#addImport" text="Add import entry">
-                           <accelerator>
-                              <KeyCodeCombination alt="UP" code="I" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                           </accelerator>
-                        </MenuItem>
                         <MenuItem mnemonicParsing="false" onAction="#addExport" text="Add export entry">
                            <accelerator>
                               <KeyCodeCombination alt="UP" code="E" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
@@ -97,6 +87,7 @@ SOFTWARE.
                   <Menu mnemonicParsing="false" text="Settings">
                      <items>
                         <CheckMenuItem fx:id="showAllProperties" mnemonicParsing="false" text="Show all properties" />
+                        <CheckMenuItem fx:id="makeBackups" mnemonicParsing="false" text="Auto make backups" />
                      </items>
                   </Menu>
                 <Menu mnemonicParsing="false" text="Help">
@@ -114,11 +105,13 @@ SOFTWARE.
                   <Separator fx:id="packageSeparator" orientation="VERTICAL" />
                   <ComboBox fx:id="packageSelector" prefWidth="200.0" />
                   <Separator fx:id="entrySeparator" orientation="VERTICAL" />
-                  <Button fx:id="addName" mnemonicParsing="false" onAction="#addName" text="+name" />
-                  <Button fx:id="addImport" mnemonicParsing="false" onAction="#addImport" text="+import" />
+                  <Button fx:id="showNameWnd" mnemonicParsing="false" onAction="#showNameWnd" text="names" />
+                  <Button fx:id="showImportWnd" mnemonicParsing="false" onAction="#showImportWnd" text="imports" />
                   <Button fx:id="addExport" mnemonicParsing="false" onAction="#addExport" text="+export" />
                   <ComboBox fx:id="entrySelector" prefWidth="200.0" />
+                  <Button fx:id="update" mnemonicParsing="false" onAction="#update" text="update" />
                   <Button fx:id="save" mnemonicParsing="false" onAction="#save" text="save" />
+                  <Button fx:id="delete" mnemonicParsing="false" onAction="#delete" text="delete" />
                   <Button fx:id="copy" mnemonicParsing="false" onAction="#copy" text="copy" />
                </items>
             </ToolBar>

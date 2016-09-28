@@ -1,2 +1,4 @@
 rootProject.name = 'L2pe'
 
+include ':pec'
+project(':pec').projectDir = new File(settingsDir, '../pec')

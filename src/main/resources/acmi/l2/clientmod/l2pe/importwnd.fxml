@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.effect.*?>
+<?import java.lang.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Menu?>
+<?import javafx.scene.control.MenuBar?>
+<?import javafx.scene.control.MenuItem?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.ToolBar?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.input.KeyCodeCombination?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.layout.VBox?>
+
+<!--suppress JavaFxDefaultTag -->
+
+<AnchorPane prefHeight="447.0" prefWidth="389.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="acmi.l2.clientmod.l2pe.ImportWndController">
+	<children>
+		<VBox AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
+			<children>
+				<ToolBar>
+					<items>
+						<Button fx:id="addImport" mnemonicParsing="false" onMouseReleased="#addImport" text="add import" />
+						<Button fx:id="editImport" mnemonicParsing="false" onMouseReleased="#editImport" text="edit import" />
+						<Button fx:id="deleteImport" mnemonicParsing="false" onMouseReleased="#deleteImport" text="delete import" />
+						<Button fx:id="sortImports" mnemonicParsing="false" onMouseReleased="#sortImports" text="sort imports" />
+					</items>
+				</ToolBar>
+				<ListView fx:id="imports" VBox.vgrow="ALWAYS">
+					<effect>
+						<Lighting>
+							<bumpInput>
+								<Shadow />
+							</bumpInput>
+							<light>
+								<Light.Distant />
+							</light>
+						</Lighting>
+					</effect>
+				</ListView>
+			</children>
+		</VBox>
+		<ProgressIndicator fx:id="loading" visible="false" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0" />
+	</children>
+</AnchorPane>

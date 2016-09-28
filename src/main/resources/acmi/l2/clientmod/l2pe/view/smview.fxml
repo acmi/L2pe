@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+Copyright (c) 2016 acmi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+-->
+
+<!--suppress JavaFxDefaultTag -->
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.SubScene?>
+<Pane fx:id="root" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
+      onMouseDragged="#onMouseDragged" onMousePressed="#onMousePressed" prefHeight="400.0" prefWidth="600.0"
+      stylesheets="@smview.css" xmlns="http://javafx.com/javafx/8.0.65" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="acmi.l2.clientmod.l2pe.view.SMView">
+    <children>
+        <SubScene fx:id="view3dScene" depthBuffer="true" fill="DIMGRAY">
+            <root>
+                <!--suppress JavaFxUnresolvedFxIdReference -->
+                <fx:include fx:id="view3d" source="3dview.fxml"/>
+            </root>
+        </SubScene>
+        <GridPane fx:id="properties" hgap="5.0" layoutX="10.0" layoutY="5.0" vgap="3.0">
+            <columnConstraints>
+                <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0"/>
+                <ColumnConstraints hgrow="SOMETIMES" maxWidth="1.7976931348623157E308" minWidth="10.0"/>
+            </columnConstraints>
+            <rowConstraints>
+                <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
+                <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
+                <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
+                <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
+            </rowConstraints>
+            <children>
+            	<Label alignment="TOP_LEFT" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" text="Materials:" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+                <Label fx:id="materials" alignment="TOP_LEFT" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" text="..." GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+            
+                <Label alignment="TOP_LEFT" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" text="Vertex:" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+                <Label fx:id="vertex" alignment="TOP_LEFT" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" text="0" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+                
+                <Label alignment="TOP_LEFT" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" text="Triangles:" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+                <Label fx:id="triangles" alignment="TOP_LEFT" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" text="0" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+                
+                <Label alignment="TOP_LEFT" text="Sections:" GridPane.columnIndex="0" GridPane.rowIndex="3"/>
+                <Label fx:id="sections" alignment="TOP_LEFT" text="0" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+            </children>
+        </GridPane>
+    </children>
+</Pane>
