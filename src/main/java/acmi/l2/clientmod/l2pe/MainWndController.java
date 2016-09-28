@@ -21,10 +21,36 @@
  */
 package acmi.l2.clientmod.l2pe;
 
+import static acmi.l2.clientmod.l2pe.Util.SAVE_DEFAULTS;
+import static acmi.l2.clientmod.l2pe.Util.selectItem;
+import static acmi.l2.clientmod.l2pe.Util.showException;
+import static acmi.l2.clientmod.unreal.UnrealSerializerFactory.IS_STRUCT;
+import static acmi.util.AutoCompleteComboBox.getSelectedItem;
+
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.ResourceBundle;
+import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
 import acmi.l2.clientmod.io.ObjectOutput;
 import acmi.l2.clientmod.io.ObjectOutputStream;
 import acmi.l2.clientmod.io.UnrealPackage;
 import acmi.l2.clientmod.properties.control.PropertiesEditor;
+import acmi.l2.clientmod.properties.control.skin.edit.ObjectEdit;
 import acmi.l2.clientmod.unreal.Environment;
 import acmi.l2.clientmod.unreal.UnrealRuntimeContext;
 import acmi.l2.clientmod.unreal.core.Class;
@@ -43,31 +69,30 @@ import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
-import javafx.scene.control.*;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.DialogPane;
+import javafx.scene.control.Hyperlink;
+import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.Separator;
+import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.GridPane;
-import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.StageStyle;
-import javafx.util.Pair;
 import javafx.util.StringConverter;
 
-import java.io.*;
-import java.net.URL;
-import java.util.*;
-import java.util.function.Consumer;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
-
-import static acmi.l2.clientmod.unreal.UnrealSerializerFactory.IS_STRUCT;
-import static acmi.util.AutoCompleteComboBox.getSelectedItem;
-
-public class Controller extends ControllerBase implements Initializable {
-    private static final Logger log = Logger.getLogger(Controller.class.getName());
-
-    private static final boolean SAVE_DEFAULTS = System.getProperty("L2pe.saveDefaults", "false").equalsIgnoreCase("true");
-    private static final boolean SHOW_STACKTRACE = System.getProperty("L2pe.showStackTrace", "false").equalsIgnoreCase("true");
+public class MainWndController extends ControllerBase implements Initializable {
+    private static final Logger log = Logger.getLogger(MainWndController.class.getName());
 
     @FXML
     private Menu packageMenu;
@@ -86,17 +111,23 @@ public class Controller extends ControllerBase implements Initializable {
     @FXML
     private ComboBox<UnrealPackage.ExportEntry> entrySelector;
     @FXML
-    private Button addName;
+    private Button showNameWnd;
     @FXML
-    private Button addImport;
+    private Button showImportWnd;
     @FXML
     private Button addExport;
     @FXML
     private Button save;
     @FXML
     private Button copy;
+    @FXML 
+    private Button delete;
+	@FXML 
+	private Button update;
     @FXML
     private CheckMenuItem showAllProperties;
+    @FXML 
+    private CheckMenuItem makeBackups;
     @FXML
     private PropertiesEditor properties;
     @FXML
@@ -120,6 +151,25 @@ public class Controller extends ControllerBase implements Initializable {
     public void setInitialDirectory(File initialDirectory) {
         this.initialDirectory.set(initialDirectory);
     }
+    
+    public boolean isBackupEnable() {
+		return makeBackups.isSelected();
+	}
+    
+    public void reselectEntry() {
+		final UnrealPackage.ExportEntry selected = getEntry();
+		if (selected != null) {
+			Platform.runLater(() -> selectItem(entrySelector, selected));
+		}
+	}
+    
+    public void setVisibleLoading(boolean isLoading) {
+		loading.setVisible(isLoading);
+	}
+    
+    public File getSelectedPackage() {
+		return packageSelector.getValue();
+	}
 
     @Override
     protected void execute(Task task, Consumer<Exception> exceptionHandler) {
@@ -140,6 +190,7 @@ public class Controller extends ControllerBase implements Initializable {
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
+    	Controllers.setMainWndController(this);
         setInitialDirectory(new File(L2PE.getPrefs().get("initialDirectory", System.getProperty("user.dir"))));
         initialDirectoryProperty().addListener((observable, oldVal, newVal) -> {
             if (newVal != null)
@@ -203,6 +254,16 @@ public class Controller extends ControllerBase implements Initializable {
             execute(() -> {
                 try (UnrealPackage up = new UnrealPackage(newValue, true)) {
                     Platform.runLater(() -> setUnrealPackage(up));
+                    
+                    final ImportWndController iwc = Controllers.getImportWndController();
+					if(iwc != null) {
+						iwc.update(up);
+					}
+					
+					final NameWndController nwc = Controllers.getNameWndController();
+					if(nwc != null) {
+						nwc.update(up);
+					}
                 }
             }, e -> {
                 log.log(Level.SEVERE, e, () -> "Couldn't load: " + newValue);
@@ -213,8 +274,8 @@ public class Controller extends ControllerBase implements Initializable {
 
         packageMenu.disableProperty().bind(packageSelected().not());
         entrySeparator.visibleProperty().bind(packageSelected());
-        addName.visibleProperty().bind(packageSelected());
-        addImport.visibleProperty().bind(packageSelected());
+        showNameWnd.visibleProperty().bind(packageSelected());
+		showImportWnd.visibleProperty().bind(packageSelected());
         addExport.visibleProperty().bind(packageSelected());
         entrySelector.visibleProperty().bind(packageSelected());
         unrealPackageProperty().addListener((observable, oldValue, newValue) -> {
@@ -263,115 +324,96 @@ public class Controller extends ControllerBase implements Initializable {
         entryMenu.disableProperty().bind(entrySelected().not());
         save.visibleProperty().bind(entrySelected());
         copy.visibleProperty().bind(Bindings.createBooleanBinding(() -> canCopy(getObject()), objectProperty()));
-
+        delete.visibleProperty().bind(entrySelected());
+		update.visibleProperty().bind(entrySelected());
+        
+        makeBackups.setSelected(true);
+        
+        ObjectEdit.getInstance().addElement(context -> {
+        	String type = ((acmi.l2.clientmod.unreal.core.ObjectProperty) context.getTemplate()).type.getFullName();
+        	if(!type.equals("Engine.StaticMesh")) {
+        		return null;
+        	}
+    	    
+        	Button viewButton = new Button("View");
+    	        viewButton.setMinWidth(Region.USE_PREF_SIZE);
+    	        viewButton.setOnAction(e -> {
+    	        	final ComboBox<UnrealPackage.Entry> cb = (ComboBox<UnrealPackage.Entry>) context.getEditorNode();
+    	        	final UnrealPackage.Entry<?> entry = cb.getSelectionModel().getSelectedItem();
+    	        	if(entry == null) {
+    	        		return;
+    	        	}
+    	        	
+    	        	Controllers.showMesh(entry);
+    	        });
+    	        return viewButton;
+        });
+        
+        ObjectEdit.getInstance().addElement(context -> {
+        	String type = ((acmi.l2.clientmod.unreal.core.ObjectProperty) context.getTemplate()).type.getFullName();
+        	if(!type.equals("Engine.Texture")) {
+        		return null;
+        	}
+    	    
+        	Button viewButton = new Button("View");
+    	        viewButton.setMinWidth(Region.USE_PREF_SIZE);
+    	        viewButton.setOnAction(e -> {
+    	        	final ComboBox<UnrealPackage.Entry> cb = (ComboBox<UnrealPackage.Entry>) context.getEditorNode();
+    	        	final UnrealPackage.Entry<?> entry = cb.getSelectionModel().getSelectedItem();
+    	        	if(entry == null) {
+    	        		return;
+    	        	}
+    	        	
+    	        	Controllers.showTexture(entry);
+    	        });
+    	        return viewButton;
+        });
+        
         loading.setVisible(false);
+        
+        final Map<String, String> namedParams = L2PE.getInstance().getParameters().getNamed();
+		String value = namedParams.get("ini");
+		if(value != null) {
+			final File file = new File(value);
+			if(!file.exists() || !file.isFile()) {
+				showException("l2.ini not found", new Exception());
+			}
+			setIni(file);
+		}
     }
 
     public void selectL2ini() {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Open l2.ini");
-        fileChooser.getExtensionFilters().addAll(
-                new FileChooser.ExtensionFilter("L2.ini", "L2.ini"),
-                new FileChooser.ExtensionFilter("All files", "*.*"));
+		FileChooser fileChooser = new FileChooser();
+		fileChooser.setTitle("Open l2.ini");
+		fileChooser.getExtensionFilters().addAll(new FileChooser.ExtensionFilter("L2.ini", "L2.ini"), new FileChooser.ExtensionFilter("All files", "*.*"));
 
-        if (getInitialDirectory() != null &&
-                getInitialDirectory().exists() &&
-                getInitialDirectory().isDirectory())
-            fileChooser.setInitialDirectory(getInitialDirectory());
+		if (getInitialDirectory() != null && getInitialDirectory().exists() && getInitialDirectory().isDirectory())
+			fileChooser.setInitialDirectory(getInitialDirectory());
+		fileChooser.setInitialFileName("l2.ini");
 
-        File selected = fileChooser.showOpenDialog(application.getStage());
-        if (selected == null)
-            return;
+		File selected = fileChooser.showOpenDialog(application.getStage());
+		if (selected == null)
+			return;
+		
+		setIni(selected);
+	}
+	
+	private void setIni(File file) {
+		setInitialDirectory(file.getParentFile());
 
-        setInitialDirectory(selected.getParentFile());
+		try {
+			setEnvironment(Environment.fromIni(file));
+		} catch (Exception e) {
+			log.log(Level.SEVERE, e, () -> "Couldn't load L2.ini");
+			showException("Couldn't load L2.ini", e);
+			return;
+		}
 
-        try {
-            setEnvironment(Environment.fromIni(selected));
-        } catch (Exception e) {
-            log.log(Level.SEVERE, e, () -> "Couldn't load L2.ini");
-
-            showException("Couldn't load L2.ini", e);
-            return;
-        }
-
-        execute(() -> getSerializerFactory().getOrCreateObject("Engine.Actor", IS_STRUCT), e -> {
-            log.log(Level.SEVERE, e, () -> "Couldn't load Engine.Actor");
-
-            showException("Couldn't load Engine.Actor", e);
-        });
-    }
-
-    public void addName() {
-        if (!isPackageSelected())
-            return;
-
-        TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle("Create name entry");
-        dialog.setHeaderText(null);
-        dialog.setContentText("Name string:");
-        dialog.showAndWait()
-                .ifPresent(name -> execute(() -> {
-                            try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
-                                up.addNameEntries(name);
-                                Platform.runLater(() -> setUnrealPackage(up));
-
-                                getEnvironment().markInvalid(up.getPackageName());
-                            }
-                        }, e -> {
-                            log.log(Level.SEVERE, e, () -> "Couldn't add name entry");
-
-                            showException("Couldn't add name entry", e);
-                        }
-                ));
-    }
-
-    public void addImport() {
-        if (!isPackageSelected())
-            return;
-
-        Dialog<Pair<String, String>> dialog = new Dialog<>();
-        dialog.setTitle("Create import entry");
-        dialog.setHeaderText(null);
-
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-
-        TextField name = new TextField();
-        name.setPromptText("Package.Name");
-        TextField clazz = new TextField();
-        clazz.setPromptText("Core.Class");
-
-        grid.add(new Label("Name:"), 0, 0);
-        grid.add(name, 1, 0);
-        grid.add(new Label("Class:"), 0, 1);
-        grid.add(clazz, 1, 1);
-
-        dialog.getDialogPane().setContent(grid);
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-
-        dialog.setResultConverter(dialogButton -> {
-            if (dialogButton == ButtonType.OK) {
-                return new Pair<>(name.getText(), clazz.getText());
-            }
-            return null;
-        });
-
-        dialog.showAndWait()
-                .ifPresent(nameClass -> execute(() -> {
-                    try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
-                        up.addImportEntries(Collections.singletonMap(nameClass.getKey(), nameClass.getValue()));
-                        Platform.runLater(() -> setUnrealPackage(up));
-
-                        getEnvironment().markInvalid(up.getPackageName());
-                    }
-                }, e -> {
-                    log.log(Level.SEVERE, e, () -> "Couldn't add import entry");
-
-                    showException("Couldn't add import entry", e);
-                }));
-    }
+		execute(() -> getSerializerFactory().getOrCreateObject("Engine.Actor", IS_STRUCT), e -> {
+			log.log(Level.SEVERE, e, () -> "Couldn't load Engine.Actor");
+			showException("Couldn't load Engine.Actor", e);
+		});
+	}
 
     public void addExport() {
         if (!isPackageSelected())
@@ -412,6 +454,8 @@ public class Controller extends ControllerBase implements Initializable {
 
         dialog.showAndWait()
                 .ifPresent(nameClass -> execute(() -> {
+                	Util.createBackup();
+                	
                     try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
                         String objName = nameClass[1];
                         int flags = UnrealPackage.DEFAULT_OBJECT_FLAGS;
@@ -448,6 +492,8 @@ public class Controller extends ControllerBase implements Initializable {
             return;
 
         execute(() -> {
+        	Util.createBackup();
+        	
             try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
                 UnrealPackage.ExportEntry entry = up.getExportTable().get(selected.getIndex());
                 Object object = getSerializerFactory().getOrCreateObject(entry);
@@ -506,6 +552,8 @@ public class Controller extends ControllerBase implements Initializable {
         dialog.setHeaderText(null);
         dialog.setContentText("New name:");
         dialog.showAndWait().ifPresent(name -> execute(() -> {
+        	Util.createBackup();
+        	
             try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
                 if (object.getClass() == Object.class) {
                     up.addExportEntry(name,
@@ -534,6 +582,60 @@ public class Controller extends ControllerBase implements Initializable {
             showException("Couldn't copy entry", e);
         }));
     }
+    
+    public void delete() {
+		if (!isEntrySelected())
+			return;
+
+		UnrealPackage.ExportEntry selected = getSelectedItem(entrySelector);
+		if (selected == null)
+			return;
+
+		execute(() -> {
+			Util.createBackup();
+			
+			try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
+				up.updateExportTable(exportTable -> {
+					exportTable.remove(selected);
+					up.getFile().setPosition(up.getDataEndOffset().orElseThrow(IllegalStateException::new));
+				});
+
+				entrySelector.getSelectionModel().clearSelection();
+				Platform.runLater(() -> setUnrealPackage(up));
+				getEnvironment().markInvalid(up.getPackageName());
+			}
+		}, e -> {
+			log.log(Level.SEVERE, e, () -> "Couldn't delete entry");
+			showException("Couldn't delete entry", e);
+		});
+	}
+
+	public void update() {
+		UnrealPackage.ExportEntry selected = getSelectedItem(entrySelector);
+		if (selected == null) {
+			return;
+		}
+
+		execute(() -> {
+			try (UnrealPackage up = new UnrealPackage(getUnrealPackage().getFile().openNewSession(false))) {
+				Platform.runLater(() -> setUnrealPackage(up));
+				getEnvironment().markInvalid(up.getPackageName());
+			}
+
+			Platform.runLater(() -> selectItem(entrySelector, selected));
+		}, e -> {
+			log.log(Level.SEVERE, e, () -> "Couldn't update entry");
+			showException("Couldn't update entry", e);
+		});
+	}
+	
+	public void showImportWnd() {
+		Controllers.showImportWnd();
+	}
+	
+	public void showNameWnd() {
+		Controllers.showNameWnd();
+	}
 
     public void exportProperties() {
         if (!isEntrySelected())
@@ -576,7 +678,7 @@ public class Controller extends ControllerBase implements Initializable {
     }
 
     public void about() {
-        Dialog dialog = new Dialog();
+        Dialog<?> dialog = new Dialog<>();
         dialog.initStyle(StageStyle.UTILITY);
         dialog.setTitle("About");
 
@@ -600,58 +702,6 @@ public class Controller extends ControllerBase implements Initializable {
     }
 
     public void exit() {
-        Platform.exit();
-    }
-
-    private void showException(String text, Throwable ex) {
-        Platform.runLater(() -> {
-            if (SHOW_STACKTRACE) {
-                Alert alert = new Alert(Alert.AlertType.ERROR);
-                alert.setTitle("Error");
-                alert.setHeaderText(null);
-                alert.setContentText(text);
-
-                StringWriter sw = new StringWriter();
-                PrintWriter pw = new PrintWriter(sw);
-                ex.printStackTrace(pw);
-                String exceptionText = sw.toString();
-
-                Label label = new Label("Exception stacktrace:");
-
-                TextArea textArea = new TextArea(exceptionText);
-                textArea.setEditable(false);
-                textArea.setWrapText(true);
-
-                textArea.setMaxWidth(Double.MAX_VALUE);
-                textArea.setMaxHeight(Double.MAX_VALUE);
-                GridPane.setVgrow(textArea, Priority.ALWAYS);
-                GridPane.setHgrow(textArea, Priority.ALWAYS);
-
-                GridPane expContent = new GridPane();
-                expContent.setMaxWidth(Double.MAX_VALUE);
-                expContent.add(label, 0, 0);
-                expContent.add(textArea, 0, 1);
-
-                alert.getDialogPane().setExpandableContent(expContent);
-
-                alert.showAndWait();
-            } else {
-                //noinspection ThrowableResultOfMethodCallIgnored
-                Throwable t = getTop(ex);
-
-                Alert alert = new Alert(Alert.AlertType.ERROR);
-                alert.setTitle(t.getClass().getSimpleName());
-                alert.setHeaderText(text);
-                alert.setContentText(t.getMessage());
-
-                alert.showAndWait();
-            }
-        });
-    }
-
-    private static Throwable getTop(Throwable t) {
-        while (t.getCause() != null)
-            t = t.getCause();
-        return t;
+    	Controllers.die();
     }
 }

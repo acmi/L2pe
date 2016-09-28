@@ -21,16 +21,6 @@
  */
 package acmi.l2.clientmod.l2pe;
 
-import javafx.application.Application;
-import javafx.application.Platform;
-import javafx.beans.InvalidationListener;
-import javafx.beans.binding.Bindings;
-import javafx.fxml.FXMLLoader;
-import javafx.geometry.Rectangle2D;
-import javafx.scene.Scene;
-import javafx.stage.Screen;
-import javafx.stage.Stage;
-
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,11 +33,31 @@ import java.util.logging.LogManager;
 import java.util.logging.Logger;
 import java.util.prefs.Preferences;
 
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.beans.InvalidationListener;
+import javafx.beans.binding.Bindings;
+import javafx.fxml.FXMLLoader;
+import javafx.geometry.Rectangle2D;
+import javafx.scene.Scene;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
+
 public class L2PE extends Application {
     private static final Logger log = Logger.getLogger(L2PE.class.getName());
-
+	private static L2PE instance;
+    
+    public static L2PE getInstance() {
+    	return instance;
+    }
+    
     private Stage stage;
     private String version;
+    
+	public L2PE() {
+		super();
+		instance = this;
+	}
 
     Stage getStage() {
         return stage;
@@ -65,8 +75,9 @@ public class L2PE extends Application {
         FXMLLoader loader = new FXMLLoader(getClass().getResource("main.fxml"));
         stage.setScene(new Scene(loader.load()));
 
-        Controller controller = loader.getController();
+        MainWndController controller = loader.getController();
         controller.setApplication(this);
+        stage.setOnCloseRequest(we -> Controllers.die());
         stage.titleProperty().bind(Bindings.createStringBinding(() ->
                 (controller.getEnvironment() != null ? controller.getEnvironment().getStartDir().getAbsolutePath() + " - " : "") + "L2PE " + version, controller.environmentProperty()));
         stage.setWidth(Double.parseDouble(windowPrefs().get("width", String.valueOf(stage.getWidth()))));
